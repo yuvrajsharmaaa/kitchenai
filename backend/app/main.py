@@ -8,6 +8,7 @@ from app.core.config import get_settings
 settings = get_settings()
 app = FastAPI(title="Kitchen Redesign API")
 
+# Allow local frontend apps (and the demo UI) to call the API.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -21,12 +22,14 @@ app.include_router(router)
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon() -> Response:
+    # Avoid noisy 404s from browsers requesting a favicon.
     return Response(status_code=204)
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index() -> str:
-        return """
+    # Minimal HTML UI for quick manual testing without the frontend app.
+    return """
 <!doctype html>
 <html lang=\"en\">
     <head>

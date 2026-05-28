@@ -83,12 +83,14 @@ async def segment(
             name_hint="segmentation_preview",
         )
 
+        # Convert PIL images to base64 for the HTTP response.
         mask_payload = {
             label: pil_to_base64_png(mask) for label, mask in artifacts.masks.items()
         }
         overlay = pil_to_base64_png(artifacts.overlay)
         segmentation_map = pil_to_base64_png(artifacts.segmentation_map)
 
+        # Persist metadata so results can be replayed without re-running models.
         metadata = SegmentMetadata(
             model=settings.segmentation_model,
             device=service.device,
@@ -148,6 +150,7 @@ async def inpaint(
         save_upload(mask_image, "inpaint_mask")
         if preset_key:
             prompt = MATERIAL_PROMPTS.get(preset_key, prompt)
+        # Execute the inpainting pipeline with optional prompt overrides.
         result = service.inpaint(
             image=base_image,
             mask=mask_image,
@@ -176,14 +179,14 @@ async def inpaint_from_class(
 ) -> ImageResponse:
     try:
         pil_image = await read_image_upload(image)
-        # run segmentation to get masks
+        # Run segmentation to derive a class-specific binary mask.
         artifacts = seg_service.segment(pil_image)
         mask = artifacts.masks.get(class_name)
         if mask is None:
             raise HTTPException(status_code=400, detail=f"Unknown class: {class_name}")
-        # ensure mask is binary (white where we want to fill)
+        # Ensure mask is binary (white where we want to fill).
         mask_l = mask.convert("L")
-        # call inpaint engine
+        # Call the inpaint engine using the derived mask.
         result = service.inpaint(image=pil_image, mask=mask_l, prompt=prompt)
         save_output(result.image, "inpaint_from_class_result")
         return ImageResponse(image=pil_to_base64_png(result.image))

@@ -37,6 +37,7 @@ class SegFormerSegmenter:
         with torch.no_grad():
             outputs = model(**inputs)
 
+        # Resize logits to original image size before argmax to preserve dimensions.
         logits = outputs.logits
         logits = torch.nn.functional.interpolate(
             logits,
@@ -53,6 +54,7 @@ class SegFormerSegmenter:
             label_id = label_ids.get(label)
             if label_id is None:
                 continue
+            # Binary mask where white pixels represent the target class.
             mask = (prediction == label_id).astype(np.uint8) * 255
             masks[label] = Image.fromarray(mask, mode="L")
             pixel_counts[label] = int(mask.sum() // 255)
