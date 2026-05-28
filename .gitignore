@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+site/
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node / frontend output
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/pnpm-debug.log*
+
+# Backend runtime artifacts
+backend/uploads/
+backend/outputs/
+backend/storage/uploads/
+backend/storage/outputs/
+backend/models/
+
+# SUN RGB-D preprocessing output
+backend/training/sunrgbd/dataset/
+backend/training/sunrgbd/dataset_*/
+backend/training/sunrgbd/outputs/
+backend/training/sunrgbd/*.log
+
+# Raw SUNRGB dataset (do not commit large datasets)
+SUNRGB/
+SUNRGB/SUNRGBD/
+
+# Tooling caches
+.huggingface/
+.cache/

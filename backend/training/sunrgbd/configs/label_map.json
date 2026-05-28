@@ -1,0 +1,9 @@
+{
+  "background": 0,
+  "floor": 1,
+  "wall": 2,
+  "cabinet": 3,
+  "countertop": 4,
+  "furniture": 5,
+  "appliances": 6
+}

@@ -1,0 +1,14 @@
+fastapi==0.115.5
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+pillow==10.4.0
+numpy==2.1.1
+matplotlib==3.9.2
+torch==2.4.1
+transformers==4.46.3
+diffusers==0.31.0
+accelerate==1.0.1
+safetensors==0.4.5
+opencv-python==4.10.0.84
+evaluate==0.4.2
+torchvision==0.19.1

@@ -1,0 +1,35 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Environment files and virtualenvs
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+env/
+ENV/
+
+# Backend runtime data
+uploads/
+outputs/
+storage/uploads/
+storage/outputs/
+models/
+
+# SUN RGB-D preprocessing artifacts
+training/sunrgbd/dataset/
+training/sunrgbd/dataset_*/
+training/sunrgbd/outputs/
+training/sunrgbd/*.log
+
+# Misc
+.DS_Store
+Thumbs.db
