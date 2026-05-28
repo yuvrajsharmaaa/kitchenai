@@ -20,3 +20,14 @@ jobs:
 
       - name: Syntax check (compileall)
         run: python -m compileall backend/app
+
+      - name: Run tests (if present)
+        run: |
+          if [ -d "backend/tests" ] || [ -d "tests" ]; then
+            python -m pip install --upgrade pip
+            python -m pip install -r backend/requirements.txt
+            python -m pip install pytest
+            pytest -q
+          else
+            echo "No tests directory found; skipping."
+          fi
