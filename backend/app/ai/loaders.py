@@ -6,16 +6,10 @@ from typing import Any, Optional, TYPE_CHECKING, cast
 import torch
 
 if TYPE_CHECKING:
-    from diffusers.models.controlnet import ControlNetModel
-    from diffusers.pipelines.controlnet.pipeline_controlnet_inpaint import (
-        StableDiffusionControlNetInpaintPipeline,
-    )
     from transformers import AutoImageProcessor, SegformerForSemanticSegmentation
 else:
     AutoImageProcessor = Any
     SegformerForSemanticSegmentation = Any
-    ControlNetModel = Any
-    StableDiffusionControlNetInpaintPipeline = Any
 
 
 @dataclass
@@ -32,7 +26,7 @@ class InpaintBundle:
 class ModelStore:
     def __init__(self) -> None:
         self._segmentation: Optional[SegmentationBundle] = None
-        self._inpaint: Optional[InpaintBundle] = None
+        self._sd_inpaint: Optional[InpaintBundle] = None
 
     def get_segmentation(self, model_name: str, device: str) -> SegmentationBundle:
         if self._segmentation is not None:
@@ -48,33 +42,24 @@ class ModelStore:
         self._segmentation = SegmentationBundle(processor=processor, model=model_any)
         return self._segmentation
 
-    def get_inpaint(
-        self, inpaint_model: str, controlnet_model: str, device: str
-    ) -> InpaintBundle:
-        if self._inpaint is not None:
-            return self._inpaint
-        from diffusers.models.controlnet import ControlNetModel as _ControlNetModel
-        from diffusers.pipelines.controlnet.pipeline_controlnet_inpaint import (
-            StableDiffusionControlNetInpaintPipeline as _StableDiffusionControlNetInpaintPipeline,
-        )
+    def get_inpaint_pipeline(self, inpaint_model: str) -> InpaintBundle:
+        if self._sd_inpaint is not None:
+            return self._sd_inpaint
+        from diffusers import StableDiffusionInpaintPipeline
 
+        device = "cuda" if torch.cuda.is_available() else "cpu"
         torch_dtype = torch.float16 if device == "cuda" else torch.float32
-        controlnet = _ControlNetModel.from_pretrained(
-            controlnet_model, torch_dtype=torch_dtype
-        )
-        pipe = _StableDiffusionControlNetInpaintPipeline.from_pretrained(
+
+        pipe = StableDiffusionInpaintPipeline.from_pretrained(
             inpaint_model,
-            controlnet=controlnet,
             torch_dtype=torch_dtype,
+            safety_checker=None,
         )
         pipe.to(device)
-        if hasattr(pipe, "enable_xformers_memory_efficient_attention"):
-            try:
-                pipe.enable_xformers_memory_efficient_attention()
-            except Exception:
-                pass
-        self._inpaint = InpaintBundle(pipeline=pipe)
-        return self._inpaint
+        pipe.enable_attention_slicing()
+
+        self._sd_inpaint = InpaintBundle(pipeline=pipe)
+        return self._sd_inpaint
 
 
 model_store = ModelStore()

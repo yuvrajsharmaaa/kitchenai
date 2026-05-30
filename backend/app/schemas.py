@@ -9,6 +9,7 @@ class SegmentMetadata(BaseModel):
     labels: List[str]
     width: int
     height: int
+    session_id: str
     original_path: str
     upload_path: str
     overlay_path: str
@@ -21,6 +22,7 @@ class SegmentMetadata(BaseModel):
 class SegmentResponse(BaseModel):
     width: int
     height: int
+    session_id: str
     original_image: str
     masks: Dict[str, str]
     overlay: str

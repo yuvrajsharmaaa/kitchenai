@@ -8,7 +8,6 @@ class Settings:
     cors_origins: list[str]
     segmentation_model: str
     inpaint_model: str
-    controlnet_model: str
 
 
 def get_settings() -> Settings:
@@ -22,8 +21,5 @@ def get_settings() -> Settings:
         ),
         inpaint_model=os.getenv(
             "INPAINT_MODEL", "runwayml/stable-diffusion-inpainting"
-        ),
-        controlnet_model=os.getenv(
-            "CONTROLNET_MODEL", "lllyasviel/sd-controlnet-canny"
         ),
     )

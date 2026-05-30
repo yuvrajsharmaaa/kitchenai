@@ -10,4 +10,4 @@ def get_segmentation_service() -> SegmentationService:
 
 def get_inpainting_service() -> InpaintingService:
     settings = get_settings()
-    return InpaintingService(settings.inpaint_model, settings.controlnet_model)
+    return InpaintingService(settings.inpaint_model)

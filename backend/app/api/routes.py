@@ -4,8 +4,10 @@ import logging
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from app.api.dependencies import get_inpainting_service, get_segmentation_service
+from app.ai.styles_config import STYLE_CONFIG
 from app.core.config import get_settings
 from app.ai.inpainting.prompts import MATERIAL_PROMPTS
 from app.schemas import (
@@ -17,8 +19,10 @@ from app.schemas import (
     UploadResponse,
 )
 from app.services.segmentation import SegmentationService
+from app.services.redesign import redesign_kitchen
 from app.utils.files import save_json, save_output, save_upload, to_relative
 from app.utils.image_io import pil_to_base64_png, read_image_upload
+from app.utils.paths import get_outputs_dir
 from app.utils.visualization import save_segmentation_preview
 from PIL import Image
 
@@ -28,6 +32,12 @@ if TYPE_CHECKING:
 settings = get_settings()
 router = APIRouter(prefix=settings.api_prefix)
 logger = logging.getLogger(__name__)
+
+
+class RedesignRequest(BaseModel):
+    session_id: str
+    style_name: str
+    target_classes: list[str] | None = None
 
 
 @router.get("/health")
@@ -83,6 +93,8 @@ async def segment(
             name_hint="segmentation_preview",
         )
 
+        session_id = service.persist_session(pil_image, artifacts)
+
         # Convert PIL images to base64 for the HTTP response.
         mask_payload = {
             label: pil_to_base64_png(mask) for label, mask in artifacts.masks.items()
@@ -97,6 +109,7 @@ async def segment(
             labels=list(artifacts.masks.keys()),
             width=pil_image.width,
             height=pil_image.height,
+            session_id=session_id,
             original_path=to_relative(upload_path),
             upload_path=to_relative(upload_path),
             overlay_path=to_relative(overlay_path),
@@ -112,6 +125,7 @@ async def segment(
         return SegmentResponse(
             width=pil_image.width,
             height=pil_image.height,
+            session_id=session_id,
             original_image=pil_to_base64_png(pil_image),
             masks=mask_payload,
             overlay=overlay,
@@ -195,3 +209,56 @@ async def inpaint_from_class(
     except Exception as exc:  # noqa: BLE001
         logger.exception("Inpaint-from-class failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/redesign")
+async def redesign_endpoint(req: RedesignRequest) -> dict:
+    outputs_dir = get_outputs_dir() / req.session_id
+    if not outputs_dir.exists():
+        raise HTTPException(
+            status_code=404, detail=f"Session {req.session_id} not found"
+        )
+
+    orig_path = outputs_dir / "original.jpg"
+    if not orig_path.exists():
+        orig_path = outputs_dir / "original.png"
+    if not orig_path.exists():
+        raise HTTPException(status_code=404, detail="Original image not found")
+
+    original_image = Image.open(orig_path).convert("RGB")
+
+    masks: dict[str, Image.Image] = {}
+    for mask_file in outputs_dir.glob("mask_*.png"):
+        class_name = mask_file.stem.replace("mask_", "")
+        masks[class_name] = Image.open(mask_file).convert("L")
+
+    if not masks:
+        raise HTTPException(
+            status_code=422,
+            detail="No masks found for this session. Re-run segmentation.",
+        )
+
+    result = redesign_kitchen(
+        original_image=original_image,
+        masks=masks,
+        style_name=req.style_name,
+        target_classes=req.target_classes,
+    )
+
+    return {
+        "session_id": req.session_id,
+        "style": result["style"],
+        "style_label": result["style_label"],
+        "before_b64": result["before_b64"],
+        "after_b64": result["after_b64"],
+    }
+
+
+@router.get("/styles")
+async def list_styles() -> dict:
+    return {
+        "styles": [
+            {"id": key, "label": value["label"]}
+            for key, value in STYLE_CONFIG.items()
+        ]
+    }
