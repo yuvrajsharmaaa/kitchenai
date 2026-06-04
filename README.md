@@ -57,12 +57,9 @@ Here is a quick demo showing a sample kitchen screenshot and a short video demon
 
 - **Video demonstration:**
 
-<video controls width="720">
-  <source src="assests/demo.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
-
----
+<!-- Embed (Google Drive preview) -->
+<!-- Simple link (works everywhere) -->
+[Watch demo video on Google Drive](https://drive.google.com/file/d/1A-Nrth29YXSgPVSNeFM0EsnOMUIb_Ztl/view?usp=sharing)
 
 ## 2. Getting Started
 
