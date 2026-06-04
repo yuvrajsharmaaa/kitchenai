@@ -63,7 +63,6 @@ Before installing, ensure you have the following:
 | Git | Any | For cloning |
 | CUDA (GPU) | Optional | Required for fast generation (~30 sec); CPU works but is very slow (~15 min) |
 
-> **No Hugging Face account required** for the default models. They are publicly available and download automatically on first run.
 
 ### 2.2 Clone the Repository
 
@@ -133,6 +132,23 @@ Now open your browser:
 > | `runwayml/stable-diffusion-inpainting` | ~4.2 GB | Style generation |
 
 ---
+
+## Example
+
+Here is a quick demo showing a sample kitchen screenshot and a short video demonstration of the redesign pipeline.
+
+- **Screenshot:**
+
+![Demo screenshot](assests/ss1.png)
+
+- **Video demonstration:**
+
+<video controls width="720">
+  <source src="assests/demo.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
+
 
 ## 3. Project Structure and Architecture
 
