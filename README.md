@@ -47,6 +47,21 @@ Hiring an interior designer, ordering material samples, and physically visualisi
 - **Developers** building property tech, real estate, or home improvement applications
 - **AI/ML engineers** interested in combining semantic segmentation with generative inpainting
 
+## Example
+
+Here is a quick demo showing a sample kitchen screenshot and a short video demonstration of the redesign pipeline.
+
+- **Screenshot:**
+
+![Demo screenshot](assests/ss1.png)
+
+- **Video demonstration:**
+
+<video controls width="720">
+  <source src="assests/demo.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
 ---
 
 ## 2. Getting Started
@@ -132,22 +147,6 @@ Now open your browser:
 > | `runwayml/stable-diffusion-inpainting` | ~4.2 GB | Style generation |
 
 ---
-
-## Example
-
-Here is a quick demo showing a sample kitchen screenshot and a short video demonstration of the redesign pipeline.
-
-- **Screenshot:**
-
-![Demo screenshot](assests/ss1.png)
-
-- **Video demonstration:**
-
-<video controls width="720">
-  <source src="assests/demo.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
-
 
 
 ## 3. Project Structure and Architecture
@@ -641,28 +640,4 @@ To add a new style (e.g., "Industrial Loft"):
 3. Add the style to the frontend style selector button list
 4. Test via `curl http://127.0.0.1:8001/api/styles` and confirm your new style appears
 
-### 10.6 Coding Standards
 
-- **Python style**: Follow [PEP 8](https://peps.python.org/pep-0008/). Use `black` for formatting.
-- **Type hints**: Add type hints to all function signatures
-- **Docstrings**: Add a one-line docstring to every function
-- **No hardcoded paths**: Use `pathlib.Path` and `config.py` settings; never hardcode filesystem paths
-- **Error handling**: All API endpoints should return appropriate HTTP status codes with descriptive messages
-
----
-
-## 11. Roadmap & Future Enhancements
-
-### Near-term (MVP Completion)
-
-- [ ] Add mask editing UI — let users manually correct segmentation mistakes using a brush tool
-- [ ] Add loading progress indicator to the frontend during generation
-- [ ] Implement async job queue (Celery + Redis) so generation runs in the background
-- [ ] Add a segmentation confidence visualiser showing how certain the model is about each region
-
-### Medium-term
-
-- [ ] **More styles** — Industrial Loft, Coastal Breeze, Japandi Minimal, Art Deco Gold
-- [ ] **Partial application** — clickable style per region (marble floor + wood cabinets)
-- [ ] **Shareable results** — generate a shareable link with before/after images
-- [ ] **Higher quality** — upgrade to SDXL or Flux Fill for 1024×1024 output
