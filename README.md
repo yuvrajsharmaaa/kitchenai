@@ -1,375 +1,262 @@
-# 🍳 KitchenAI — AI-Powered Kitchen Redesign Tool
+# KitchenAI
 
 > Upload a photo of your kitchen. Pick a style. Watch it transform.
 
-KitchenAI uses computer vision and generative AI to segment a kitchen photo into its structural regions — floor, cabinets, backsplash, countertop — and then applies realistic material and style transformations to those regions. The output is a side-by-side before/after comparison of the kitchen with the chosen design style applied.
+KitchenAI is a local-first redesign tool that combines **semantic segmentation** (SegFormer) with **Stable Diffusion inpainting** to swap out kitchen surfaces — floors, cabinets, backsplash, countertops — based on a text-driven style. No cloud API, no subscription, no account. It runs entirely on your own machine.
+
+**Demo:**
+
+![Demo screenshot](assests/ss1.png)
+
+[▶ Watch the full demo on Google Drive](https://drive.google.com/file/d/1A-Nrth29YXSgPVSNeFM0EsnOMUIb_Ztl/view?usp=sharing)
 
 ---
 
 ## Table of Contents
 
-1. [Project Overview](#1-project-overview)
-2. [Getting Started](#2-getting-started)
-3. [Project Structure and Architecture](#3-project-structure-and-architecture)
-4. [How It Works — In Depth](#4-how-it-works--in-depth)
-5. [Available Styles](#5-available-styles)
-6. [Usage Guide](#6-usage-guide)
-7. [API Reference](#7-api-reference)
+1. [How it works](#1-how-it-works)
+2. [Getting started](#2-getting-started)
+3. [Project layout](#3-project-layout)
+4. [Architecture overview](#4-architecture-overview)
+5. [Available styles](#5-available-styles)
+6. [Usage — web UI and API](#6-usage--web-ui-and-api)
+7. [API reference](#7-api-reference)
 8. [Configuration](#8-configuration)
-9. [Hardware Requirements](#9-hardware-requirements)
+9. [Hardware and disk requirements](#9-hardware-and-disk-requirements)
 10. [Contributing](#10-contributing)
-11. [Roadmap & Future Enhancements](#11-roadmap--future-enhancements)
-12. [Known Issues](#12-known-issues)
+11. [Known issues](#11-known-issues)
+12. [Roadmap](#12-roadmap)
 13. [License](#13-license)
-14. [Contact & Support](#14-contact--support)
 
 ---
 
-## 1. Project Overview
+## 1. How it works
 
-### What Problem Does This Solve?
+There are two AI steps, run back-to-back for every redesign request.
 
-Hiring an interior designer, ordering material samples, and physically visualising what a kitchen redesign would look like is slow and expensive. KitchenAI allows anyone to take a photo of their existing kitchen and instantly see what it would look like with a completely different material palette — marble countertops, dark luxury cabinets, rustic wood floors — in seconds, for free, running entirely on their own machine.
+### Step 1 — Segmentation
 
-### Key Features
+The uploaded image is passed through **SegFormer-B0**, fine-tuned on the ADE20K indoor scene dataset. Every pixel gets assigned a class label. KitchenAI pulls out four classes:
 
-- **Semantic segmentation** — automatically detects and labels kitchen regions (floor, cabinets, backsplash, countertops) in any uploaded photo
-- **Four curated design styles** — Italian Marble, Wooden Rustic, Modern White, and Dark Luxury
-- **Realistic image generation** — uses Stable Diffusion inpainting to synthesise photorealistic material changes that respect the original room's geometry, lighting, and perspective
-- **Before/after comparison** — returns both the original and the redesigned image for easy comparison
-- **Fully local** — no cloud API required; everything runs on your own machine
-- **Simple REST API** — designed to be consumed by any frontend (the included Next.js frontend or your own)
+| Region | ADE20K class ID |
+|---|---|
+| Floor | 3 |
+| Wall / Backsplash | 0 (lower wall crop) |
+| Cabinet | 24 |
+| Countertop | 46 |
 
-### Who Is This For?
+Each class becomes a **binary mask** — a same-size black-and-white image where white means "this region". Masks are saved to disk under a session ID so the inpainter can load them independently.
 
-- **Homeowners** who want to visualise kitchen renovation ideas before committing
-- **Interior design students** exploring how material changes affect a space
-- **Developers** building property tech, real estate, or home improvement applications
-- **AI/ML engineers** interested in combining semantic segmentation with generative inpainting
+Before inpainting, every mask goes through a small post-processing pipeline to avoid sharp, artificial boundaries:
 
-## Example
+```
+raw binary mask (0 / 255)
+  → MaxFilter (5 px)     — dilates edges slightly so boundary pixels aren't missed
+  → GaussianBlur (r=2)   — feathers the edge for smooth material blending
+  → alpha composite      — result blended back onto original outside the mask
+```
 
-Here is a quick demo showing a sample kitchen screenshot and a short video demonstration of the redesign pipeline.
+### Step 2 — Inpainting
 
-- **Screenshot:**
+**Stable Diffusion Inpainting** (`runwayml/stable-diffusion-inpainting`) takes the original image, the combined mask, and a style prompt, and generates new pixels for every masked region. Everything outside the mask is taken directly from the original — the room's lighting, geometry, and perspective are preserved.
 
-![Demo screenshot](assests/ss1.png)
+Each style has a hand-tuned config:
 
-- **Video demonstration:**
+| Parameter | What it controls |
+|---|---|
+| `prompt` | What materials/look to generate |
+| `negative_prompt` | What to explicitly avoid |
+| `strength` | How far from the original the result is allowed to drift (0.0–1.0) |
+| `guidance_scale` | How literally to follow the prompt |
+| `num_inference_steps` | Quality vs. speed trade-off |
 
-<!-- Embed (Google Drive preview) -->
-<!-- Simple link (works everywhere) -->
-[Watch demo video on Google Drive](https://drive.google.com/file/d/1A-Nrth29YXSgPVSNeFM0EsnOMUIb_Ztl/view?usp=sharing)
+Models are loaded once and kept in memory (`ModelStore` in `loaders.py`). On CUDA, they run in `float16` to halve VRAM usage. The first request is slow while models load; all subsequent requests skip that overhead.
 
-## 2. Getting Started
+---
 
-### 2.1 Prerequisites
+## 2. Getting started
 
-Before installing, ensure you have the following:
+### Prerequisites
 
-| Requirement | Minimum Version | Notes |
+| Requirement | Version | Notes |
 |---|---|---|
 | Python | 3.10+ | 3.11 recommended |
 | Node.js | 18+ | For the frontend |
-| npm | 9+ | Comes with Node.js |
-| Git | Any | For cloning |
-| CUDA (GPU) | Optional | Required for fast generation (~30 sec); CPU works but is very slow (~15 min) |
+| npm | 9+ | Ships with Node.js |
+| Git | any | — |
+| CUDA GPU | optional | ~30 sec/image with GPU; ~15 min on CPU |
 
-
-### 2.2 Clone the Repository
+### Clone
 
 ```bash
 git clone https://github.com/yuvrajsharmaaa/kitchenai.git
 cd kitchenai
 ```
 
-### 2.3 Backend Setup
+### Backend
 
 ```bash
-# Step 1: Navigate to the backend directory
 cd backend
-
-# Step 2: Create and activate a Python virtual environment
 python -m venv .venv
 
-# On Windows (PowerShell):
+# Windows (PowerShell)
 .\.venv\Scripts\Activate.ps1
 
-# On macOS / Linux:
+# macOS / Linux
 source .venv/bin/activate
 
-# Step 3: Install all Python dependencies
 pip install -r requirements.txt
-
-# Step 4: Install any missing dependencies for the generation pipeline
 pip install "diffusers>=0.27.0" accelerate safetensors
 ```
 
-### 2.4 Frontend Setup
+### Frontend
 
 ```bash
-# In a separate terminal, navigate to the frontend directory
 cd frontend
-
-# Install Node.js dependencies
 npm install
 ```
 
-### 2.5 Running the Project
+### Run
 
-**Terminal 1 — Start the backend API:**
-
+**Terminal 1 — backend:**
 ```bash
 cd backend
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
-**Terminal 2 — Start the frontend:**
-
+**Terminal 2 — frontend:**
 ```bash
 cd frontend
 npm run dev
 ```
 
-Now open your browser:
-- **Frontend (user interface):** http://localhost:3000
-- **Backend API docs (interactive):** http://127.0.0.1:8001/docs
-- **Backend health check:** http://127.0.0.1:8001/api/health
+- Frontend: http://localhost:3000
+- Interactive API docs: http://127.0.0.1:8001/docs
+- Health check: http://127.0.0.1:8001/api/health
 
-> **First-run model downloads:** On the very first run, the system will automatically download two AI models from Hugging Face. This requires an internet connection and approximately 4.5 GB of disk space. The downloads are cached and do not repeat on subsequent runs.
+> **First run — model downloads.** On the very first request, two models are fetched from Hugging Face and cached in `~/.cache/huggingface/`. This needs an internet connection and about 4.5 GB of disk space. After that, nothing is re-downloaded.
 >
-> | Model | Size | Purpose |
+> | Model | Size | Role |
 > |---|---|---|
-> | `nvidia/segformer-b0-finetuned-ade-512-512` | ~300 MB | Kitchen region detection |
+> | `nvidia/segformer-b0-finetuned-ade-512-512` | ~300 MB | Region detection |
 > | `runwayml/stable-diffusion-inpainting` | ~4.2 GB | Style generation |
 
 ---
 
-
-## 3. Project Structure and Architecture
-
-### 3.1 Directory Layout
+## 3. Project layout
 
 ```
 kitchenai/
 │
-├── backend/                        ← Python FastAPI server + AI models
+├── backend/
 │   ├── app/
-│   │   ├── ai/                     ← All AI/ML model code
+│   │   ├── ai/
 │   │   │   ├── segmentation/
-│   │   │   │   └── segformer.py    ← Detects kitchen regions in a photo
+│   │   │   │   └── segformer.py       # Runs SegFormer, produces per-class masks
 │   │   │   ├── inpainting/
-│   │   │   │   └── sd_inpaint.py   ← Generates styled images via Stable Diffusion
-│   │   │   ├── styles_config.py    ← Defines the 4 design styles and their prompts
-│   │   │   └── loaders.py          ← Loads and caches AI models in memory
+│   │   │   │   └── sd_inpaint.py      # Calls the SD inpainting pipeline
+│   │   │   ├── styles_config.py       # Style definitions: prompt, strength, guidance, steps
+│   │   │   └── loaders.py             # Lazy model loading + in-memory caching (ModelStore)
 │   │   │
 │   │   ├── api/
-│   │   │   └── routes.py           ← HTTP endpoints: /segment, /redesign, /styles
+│   │   │   └── routes.py              # /segment, /redesign, /styles endpoints
 │   │   │
 │   │   ├── core/
-│   │   │   └── config.py           ← App settings and environment variable reader
+│   │   │   └── config.py              # App settings; reads env vars
 │   │   │
 │   │   ├── services/
-│   │   │   ├── segmentation.py     ← Business logic for running segmentation
-│   │   │   └── redesign.py         ← Business logic for running style application
+│   │   │   ├── segmentation.py        # Orchestrates segmentation flow
+│   │   │   └── redesign.py            # Orchestrates inpainting flow
 │   │   │
-│   │   ├── utils/                  ← Image helpers, file I/O utilities
-│   │   │   └── main.py             ← App entry point; starts FastAPI, adds CORS
-│   │   │
-│   ├── outputs/                    ← Auto-created at runtime; stores session files
-│   │   └── {session_id}/
-│   │       ├── original.jpg        ← The uploaded kitchen image
-│   │       ├── mask_floor.png      ← Binary mask for the floor region
-│   │       ├── mask_cabinet.png    ← Binary mask for the cabinet region
-│   │       ├── mask_backsplash.png ← Binary mask for the backsplash region
-│   │       └── mask_countertop.png ← Binary mask for the countertop region
+│   │   ├── utils/                     # Image I/O helpers
+│   │   └── main.py                    # FastAPI app init, CORS config
 │   │
-│   └── requirements.txt            ← Python package list
+│   ├── outputs/                       # Auto-created; one subdirectory per session
+│   │   └── {session_id}/
+│   │       ├── original.jpg
+│   │       ├── mask_floor.png
+│   │       ├── mask_cabinet.png
+│   │       ├── mask_backsplash.png
+│   │       └── mask_countertop.png
+│   │
+│   └── requirements.txt
 │
-├── frontend/                       ← Next.js web application
-│   └── (standard Next.js layout)
-│
-├── README.md                       ← This file
+├── frontend/                          # Next.js app
+├── assests/                           # Demo screenshots
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 └── LICENSE
 ```
 
-### 3.2 Core Components and How They Interact
+---
+
+## 4. Architecture overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        FRONTEND                             │
-│   User uploads image → calls /api/segment                  │
-│   User picks a style → calls /api/redesign                 │
-│   Displays before/after images from response               │
-└────────────────────────┬────────────────────────────────────┘
-                         │ HTTP (JSON + base64 images)
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    FASTAPI BACKEND                          │
-│                                                             │
-│   routes.py  ←──────────────────── Receives HTTP requests  │
-│       │                                                     │
-│       ├──► SegmentationService ──► SegFormer model         │
-│       │         saves masks to outputs/{session_id}/       │
-│       │                                                     │
-│       └──► RedesignService ──────► SD Inpainting model     │
-│                 loads masks, runs pipeline, composites      │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    AI MODELS (local)                        │
-│                                                             │
-│  SegFormer (segmentation) ── identifies regions by pixel   │
-│  Stable Diffusion Inpaint ── generates new material pixels │
-└─────────────────────────────────────────────────────────────┘
+FRONTEND  (Next.js, localhost:3000)
+  │
+  │  POST /api/segment   ← multipart image upload
+  │  POST /api/redesign  ← JSON { session_id, style_name }
+  │
+  ▼
+FASTAPI BACKEND  (localhost:8001)
+  │
+  ├── /segment  → SegmentationService
+  │                  └── SegFormerSegmenter
+  │                        ├── resize to 512×512
+  │                        ├── SegFormer forward pass → pixel class map
+  │                        ├── extract floor / cabinet / backsplash / countertop masks
+  │                        └── save masks + original to outputs/{session_id}/
+  │
+  └── /redesign → RedesignService
+                     ├── load original + masks from outputs/{session_id}/
+                     ├── look up style prompt from styles_config.py
+                     ├── combine masks into one composite
+                     └── sd_inpaint.run_sd_inpaint()
+                           ├── resize to SD-compatible dims (multiple of 8)
+                           ├── SD inpainting forward pass
+                           ├── composite result back onto original using mask as alpha
+                           └── return before_b64, after_b64
 ```
 
-### 3.3 Data Flow
-
-Here is the complete journey of a kitchen image through the system:
-
-```
-1. USER UPLOADS IMAGE
-   └─► POST /api/segment
-       └─► SegmentationService.segment()
-           └─► SegFormerSegmenter.segment()
-               ├─ Resizes image to 512×512
-               ├─ Runs SegFormer model → pixel-level class predictions
-               ├─ Maps predictions to: floor / cabinet / backsplash / countertop
-               ├─ Saves original.jpg and mask_*.png to outputs/{session_id}/
-               └─ Returns: session_id, overlay image (base64), class masks
-
-2. USER SELECTS STYLE
-   └─► POST /api/redesign { session_id, style_name }
-       └─► RedesignService.redesign_kitchen()
-           ├─ Loads original.jpg from outputs/{session_id}/
-           ├─ Loads all mask_*.png files
-           ├─ Looks up style prompt from styles_config.py
-           ├─ Combines masks into one composite mask
-           └─► sd_inpaint.run_sd_inpaint()
-               ├─ Resizes to SD-compatible dimensions (multiple of 8)
-               ├─ Runs Stable Diffusion Inpainting pipeline
-               ├─ Composites result onto original image
-               └─ Returns: before_b64, after_b64
-
-3. FRONTEND DISPLAYS
-   └─ Side-by-side before/after images
-```
+The frontend never touches disk — it only gets base64-encoded images back from the API and renders them in the browser.
 
 ---
 
-## 4. How It Works — In Depth
+## 5. Available styles
 
-This section explains the technology behind each step in plain language.
-
-### 4.1 What Is Semantic Segmentation?
-
-Semantic segmentation is the process of labelling every single pixel in an image with a category. Think of it like colouring in a photograph, but done by an AI — every pixel belonging to the floor gets coloured one colour, every pixel belonging to a cabinet gets another colour, and so on.
-
-KitchenAI uses a model called **SegFormer**, developed by NVIDIA. It was trained on the **ADE20K dataset**, a large collection of indoor scenes annotated with 150 object categories. When given a kitchen photo, SegFormer produces a map where each pixel has an assigned class ID.
-
-The relevant ADE20K class IDs for kitchens are:
-
-| Region | ADE20K Label ID | Notes |
+| ID | Name | What changes |
 |---|---|---|
-| Floor | 3 | Kitchen and general floor |
-| Wall / Backsplash | 0 | Full wall — MVP uses lower portion |
-| Cabinet | 24 | Kitchen cabinetry |
-| Countertop | 46 | Counter surfaces |
-| Table / Island | 15 | Kitchen islands if present |
+| `italian_marble` | 🏛️ Italian Marble | White Carrara marble with grey veining across counters and backsplash; polished stone floor |
+| `wooden_rustic` | 🪵 Wooden Rustic | Warm oak-grain cabinets, reclaimed wood flooring, natural earthy tones throughout |
+| `modern_white` | 🤍 Modern White | Flat white lacquer surfaces, minimal hardware, Scandinavian-influenced clean lines |
+| `dark_luxury` | 🖤 Dark Luxury | Matte black cabinets, dark veined marble countertops, moody high-contrast palette |
 
-After segmentation, the system creates a **binary mask** for each class. A binary mask is a black-and-white image the same size as the original photo, where white pixels mean "this region" and black pixels mean "not this region". These masks are the key to targeted material replacement.
-
-### 4.2 What Is Inpainting?
-
-Inpainting is the process of filling in a region of an image with AI-generated content. It was originally used to remove unwanted objects from photos (like filling in where a person stood). Here, we use it creatively — instead of removing something, we're replacing kitchen surfaces with new materials.
-
-**Stable Diffusion Inpainting** takes three inputs:
-1. The original image
-2. A mask (which areas to change)
-3. A text prompt (what the new content should look like)
-
-The model then generates new pixels for the masked area that match the prompt, while keeping everything else intact. Because Stable Diffusion was trained on millions of real photographs, it has a very good understanding of lighting, texture, perspective, and how surfaces interact with the rest of a scene.
-
-### 4.3 The Mask Pipeline
-
-Before passing masks to the inpainter, the system processes them to avoid hard edges that would look unrealistic:
-
-```
-Raw binary mask (0 or 255 per pixel)
-        │
-        ▼
-Max Filter (5px) — dilates the mask slightly to avoid missing edge pixels
-        │
-        ▼
-Gaussian Blur (radius 2) — softens the boundary for smooth blending
-        │
-        ▼
-Composite mask (used as alpha channel for blending)
-```
-
-After inpainting, the generated image is blended back onto the original using the mask as an alpha channel — so regions outside the mask are always taken directly from the original photo, guaranteeing lighting and geometry are preserved.
-
-### 4.4 Style Prompts
-
-Each of the four design styles is backed by a carefully crafted **text prompt** that describes exactly what the surfaces should look like after transformation. The prompt system includes:
-
-- **Positive prompt** — what to generate (e.g., "Italian Carrara marble with grey veining, polished stone, elegant, interior photography")
-- **Negative prompt** — what to avoid generating (e.g., "cartoon, blurry, low quality, watermark")
-- **Strength** — how much the original image influences the result (0.0 = unchanged, 1.0 = completely new)
-- **Guidance scale** — how closely to follow the prompt (higher = more literal)
-- **Inference steps** — how many denoising steps to run (more = higher quality, slower)
-
-### 4.5 Model Loading and Caching
-
-Loading AI models is slow (10–30 seconds). The `ModelStore` class in `loaders.py` implements **lazy loading with caching** — it loads a model only on the first request that needs it and keeps it in memory for all subsequent requests. This means the first API call is slow, but all later calls are fast.
-
-On CUDA (GPU), models are loaded in `float16` precision (half the memory of `float32`), which nearly halves VRAM usage with negligible quality loss.
-
----
-
-## 5. Available Styles
-
-| Style ID | Display Name | Description |
-|---|---|---|
-| `italian_marble` | 🏛️ Italian Marble | White Carrara marble with grey veining; polished, luxury feel |
-| `wooden_rustic` | 🪵 Wooden Rustic | Warm oak grain cabinets, reclaimed wood flooring; farmhouse warmth |
-| `modern_white` | 🤍 Modern White | Clean white lacquer surfaces, Scandinavian minimalism |
-| `dark_luxury` | 🖤 Dark Luxury | Matte black cabinets, dark marble countertops; dramatic and bold |
-
-To see styles at runtime:
-
+Check available styles at runtime:
 ```bash
 curl http://127.0.0.1:8001/api/styles
 ```
 
 ---
 
-## 6. Usage Guide
+## 6. Usage — web UI and API
 
-### 6.1 Using the Web Interface
+### Web interface
 
-1. Open http://localhost:3000 in your browser
-2. Click **Upload Image** and select a kitchen photo (JPG or PNG)
-3. Click **Segment** — the system will identify and highlight the different kitchen regions
-4. Review the overlay showing detected regions (floor, cabinets, backsplash, countertop)
-5. Select one of the four design style buttons
-6. Click **Apply Style** — generation takes 15–90 seconds depending on your hardware
-7. View the before/after comparison
+1. Open http://localhost:3000
+2. Upload a JPG or PNG of a kitchen
+3. Click **Segment** — the system highlights detected regions with a colour overlay
+4. Select a style from the four buttons
+5. Click **Apply Style** — generation takes 15–90 sec on GPU, ~15 min on CPU
+6. The before/after comparison loads automatically when done
 
-### 6.2 Using the API Directly (for developers)
+### API — direct usage
 
-**Step 1 — Segment a kitchen image:**
-
+**Segment an image:**
 ```bash
 curl -X POST "http://127.0.0.1:8001/api/segment" \
   -F "file=@/path/to/kitchen.jpg"
 ```
-
-Response:
 ```json
 {
   "session_id": "a3f1b2c4",
@@ -383,40 +270,34 @@ Response:
 }
 ```
 
-**Step 2 — Apply a style:**
-
+**Apply a style:**
 ```bash
 curl -X POST "http://127.0.0.1:8001/api/redesign" \
   -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "a3f1b2c4",
-    "style_name": "italian_marble"
-  }'
+  -d '{"session_id": "a3f1b2c4", "style_name": "italian_marble"}'
 ```
-
-Response:
 ```json
 {
   "session_id": "a3f1b2c4",
   "style": "italian_marble",
   "style_label": "Italian Marble",
-  "before_b64": "<base64-encoded-JPEG>",
-  "after_b64": "<base64-encoded-JPEG>"
+  "before_b64": "<base64-JPEG>",
+  "after_b64": "<base64-JPEG>"
 }
 ```
 
-**Step 3 — Decode and display the images:**
-
+**Decode the output in Python:**
 ```python
 import base64, io
 from PIL import Image
+
 after_bytes = base64.b64decode(response["after_b64"])
-Image.open(io.BytesIO(after_bytes)).save("redesigned_kitchen.jpg")
+Image.open(io.BytesIO(after_bytes)).save("redesigned.jpg")
 ```
 
-### 6.3 Applying Styles Only to Specific Regions
+### Targeting specific regions
 
-You can limit which surfaces get restyled by passing `target_classes`:
+Pass `target_classes` to limit which surfaces get restyled:
 
 ```bash
 curl -X POST "http://127.0.0.1:8001/api/redesign" \
@@ -428,34 +309,28 @@ curl -X POST "http://127.0.0.1:8001/api/redesign" \
   }'
 ```
 
-This will only apply the marble style to the countertop and backsplash, leaving floors and cabinets unchanged.
+Floor and cabinets are left exactly as they were in the original photo.
 
-### 6.4 Expected Input / Output
+### Input / output details
 
-| Parameter | Details |
+| | |
 |---|---|
-| Input image format | JPG, PNG |
-| Recommended resolution | 512×512 to 1024×768; higher = slower |
-| Output format | Base64-encoded JPEG |
-| Output resolution | Same as input |
-| Generation time (GPU) | ~15–90 seconds |
-| Generation time (CPU) | ~10–20 minutes |
+| Accepted formats | JPG, PNG |
+| Recommended resolution | 512×512 to 1024×768 (higher → slower) |
+| Output format | Base64-encoded JPEG, same resolution as input |
+| Generation time (GPU) | 15–90 seconds |
+| Generation time (CPU) | 10–20 minutes |
 
 ---
 
-## 7. API Reference
+## 7. API reference
 
 ### `GET /api/health`
-Returns a simple health check confirming the server is running.
-
-**Response:** `{ "status": "ok" }`
-
----
+```json
+{ "status": "ok" }
+```
 
 ### `GET /api/styles`
-Returns the list of available design styles.
-
-**Response:**
 ```json
 {
   "styles": [
@@ -467,166 +342,125 @@ Returns the list of available design styles.
 }
 ```
 
----
-
 ### `POST /api/segment`
-Segments a kitchen image into labelled regions.
-
-**Request:** `multipart/form-data`
-- `file` (required) — image file (JPG or PNG)
-
-**Response:** JSON with `session_id`, `overlay_b64`, per-class mask images
-
----
+**Request:** `multipart/form-data` with `file` field (JPG or PNG).  
+**Response:** JSON with `session_id`, `overlay_b64` (segmentation colour overlay), and `masks` (per-class base64 PNG).
 
 ### `POST /api/redesign`
-Applies a design style to a previously segmented image.
-
-**Request:** JSON body
+**Request:**
 ```json
 {
   "session_id": "string (required)",
   "style_name": "italian_marble | wooden_rustic | modern_white | dark_luxury (required)",
-  "target_classes": ["floor", "cabinet", "backsplash", "countertop"] 
+  "target_classes": ["floor", "cabinet", "backsplash", "countertop"]
 }
 ```
-
-**Response:** JSON with `before_b64` and `after_b64` (both base64-encoded JPEG images)
+`target_classes` is optional — omit it to restyle all detected regions.  
+**Response:** JSON with `before_b64` and `after_b64`.
 
 ---
 
 ## 8. Configuration
 
-All settings are defined in `backend/app/core/config.py` and can be overridden with environment variables.
-
-### Environment Variables
+All settings live in `backend/app/core/config.py` and can be overridden with environment variables.
 
 | Variable | Default | Description |
 |---|---|---|
-| `API_PREFIX` | `/api` | URL prefix for all API routes |
-| `CORS_ORIGINS` | `http://localhost:3000` | Allowed frontend origins (comma-separated for multiple) |
-| `SEGFORMER_MODEL` | `nvidia/segformer-b0-finetuned-ade-512-512` | HuggingFace model ID for segmentation |
-| `INPAINT_MODEL` | `runwayml/stable-diffusion-inpainting` | HuggingFace model ID for inpainting |
+| `API_PREFIX` | `/api` | URL prefix for all routes |
+| `CORS_ORIGINS` | `http://localhost:3000` | Allowed frontend origins |
+| `SEGFORMER_MODEL` | `nvidia/segformer-b0-finetuned-ade-512-512` | HuggingFace model ID |
+| `INPAINT_MODEL` | `runwayml/stable-diffusion-inpainting` | HuggingFace model ID |
 
-### Setting Environment Variables
-
-**Windows PowerShell:**
-```powershell
-$env:SEGFORMER_MODEL = "nvidia/segformer-b0-finetuned-ade-512-512"
-$env:INPAINT_MODEL   = "runwayml/stable-diffusion-inpainting"
-$env:CORS_ORIGINS    = "http://localhost:3000"
-```
-
-**macOS / Linux:**
-```bash
-export SEGFORMER_MODEL="nvidia/segformer-b0-finetuned-ade-512-512"
-export INPAINT_MODEL="runwayml/stable-diffusion-inpainting"
-export CORS_ORIGINS="http://localhost:3000"
-```
-
-**Using a `.env` file** (recommended):
-
-Create `backend/.env`:
+**Recommended: `.env` file** at `backend/.env`:
 ```
 SEGFORMER_MODEL=nvidia/segformer-b0-finetuned-ade-512-512
 INPAINT_MODEL=runwayml/stable-diffusion-inpainting
 CORS_ORIGINS=http://localhost:3000
 ```
 
-### Low-VRAM Configuration
-
-If you have less than 6 GB of GPU VRAM, add the following to `backend/app/ai/loaders.py` inside `get_inpaint_pipeline()`:
-
-```python
-pipe.enable_model_cpu_offload()   # offloads unused layers to CPU RAM
-pipe.enable_attention_slicing(1)  # reduces peak VRAM per attention step
+**Windows PowerShell:**
+```powershell
+$env:INPAINT_MODEL = "runwayml/stable-diffusion-inpainting"
 ```
+
+**macOS / Linux:**
+```bash
+export INPAINT_MODEL="runwayml/stable-diffusion-inpainting"
+```
+
+### Low-VRAM machines (< 6 GB)
+
+Add these two lines inside `get_inpaint_pipeline()` in `backend/app/ai/loaders.py`:
+```python
+pipe.enable_model_cpu_offload()   # moves unused layers to CPU RAM between steps
+pipe.enable_attention_slicing(1)  # processes attention in one slice at a time
+```
+Both reduce peak VRAM at a small speed cost — usually worth it below 6 GB.
 
 ---
 
-## 9. Hardware Requirements
+## 9. Hardware and disk requirements
 
-| Setup | GPU VRAM | Est. Time per Image | Notes |
+| Setup | VRAM | Est. time/image | Notes |
 |---|---|---|---|
-| CPU only (no GPU) | — | 10–20 minutes | Works, but patience required |
-| Budget GPU (GTX 1060 6GB) | 6 GB | 45–90 seconds | Use `enable_model_cpu_offload()` |
-| Mid-range (RTX 3070 8GB) | 8 GB | 20–40 seconds | Comfortable |
-| High-end (RTX 3090 24GB) | 24 GB | 10–20 seconds | Fast; can increase resolution |
-| Professional (A100) | 40 GB+ | 5–10 seconds | Maximum quality |
+| CPU only | — | 10–20 min | Works; patience required |
+| GTX 1060 6 GB | 6 GB | 45–90 sec | Use `enable_model_cpu_offload()` |
+| RTX 3070 8 GB | 8 GB | 20–40 sec | Comfortable without offloading |
+| RTX 3090 24 GB | 24 GB | 10–20 sec | Can increase resolution |
+| A100 40 GB+ | 40 GB+ | 5–10 sec | Max quality |
 
-**Disk space required:**
-- Model cache: ~4.5 GB (downloaded once, stored in `~/.cache/huggingface/`)
+**Disk:**
+- Model cache: ~4.5 GB (one-time, stored in `~/.cache/huggingface/`)
 - Outputs: ~2–5 MB per session
 
-**RAM:**
-- Minimum: 8 GB system RAM
-- Recommended: 16 GB (to allow model CPU offloading without swapping)
+**System RAM:** 8 GB minimum, 16 GB recommended (allows CPU offloading without swapping).
 
 ---
 
 ## 10. Contributing
 
-We welcome contributions of all kinds — bug fixes, new styles, UI improvements, documentation, and more.
+### Bug reports
 
-### 10.1 Reporting Bugs
+Open a GitHub Issue and include:
+- OS, Python version, GPU model
+- Exact steps to reproduce
+- Full traceback if one exists
 
-Please open a GitHub Issue with:
-- A clear title and description of the problem
-- Your OS, Python version, and GPU (if applicable)
-- Steps to reproduce the issue
-- The full error message or traceback if one exists
+### Feature requests
 
-### 10.2 Suggesting Features
+Open a GitHub Issue with the `enhancement` label and explain the use case.
 
-Open a GitHub Issue with the label `enhancement`. Describe what you'd like to see and why it would be useful.
-
-### 10.3 Submitting Code Changes
-
-1. **Fork** the repository on GitHub
-2. **Create a branch** for your change:
-   ```bash
-   git checkout -b feature/add-new-style
-   ```
-3. **Make your changes** (see Development Setup below)
-4. **Test your changes** manually using the API docs at `/docs`
-5. **Commit** with a clear message:
-   ```bash
-   git commit -m "Add Coastal Breeze style with ocean-inspired palette"
-   ```
-6. **Push** to your fork and open a **Pull Request**
-
-### 10.4 Development Setup
+### Code changes
 
 ```bash
-# Install development extras
-pip install -r requirements.txt
-pip install black ruff
+# Fork, then:
+git checkout -b feature/your-change
 
-# Format code before committing
+# Before committing:
+pip install black ruff
 black backend/
 ruff check backend/
-
-# Verify no import errors
 python -m compileall backend/app
+
+git commit -m "Short description of what changed and why"
+# Open a PR from your fork
 ```
 
-### 10.5 Adding a New Design Style
-
-To add a new style (e.g., "Industrial Loft"):
+### Adding a new style
 
 1. Open `backend/app/ai/styles_config.py`
-2. Add a new entry to the `STYLE_CONFIG` dictionary:
+2. Add an entry to `STYLE_CONFIG`:
 
 ```python
 "industrial_loft": {
     "label": "Industrial Loft",
     "prompt": (
-        "photorealistic industrial kitchen with exposed concrete surfaces, "
+        "photorealistic industrial kitchen, exposed concrete surfaces, "
         "brushed steel countertops, raw concrete floor, brick backsplash, "
-        "urban loft aesthetic, moody lighting, interior photography"
+        "urban loft, moody directional lighting, interior photography"
     ),
     "negative_prompt": (
-        "marble, wood, white, bright, cartoon, blurry, low quality, watermark"
+        "marble, wood, white cabinets, bright, cartoon, blurry, watermark, low quality"
     ),
     "strength": 0.80,
     "guidance_scale": 8.5,
@@ -634,7 +468,43 @@ To add a new style (e.g., "Industrial Loft"):
 },
 ```
 
-3. Add the style to the frontend style selector button list
-4. Test via `curl http://127.0.0.1:8001/api/styles` and confirm your new style appears
+3. Add the style to the frontend selector
+4. Confirm it appears: `curl http://127.0.0.1:8001/api/styles`
 
+A few tuning notes:
+- `strength` above `0.85` tends to lose the original room's perspective
+- `guidance_scale` between 7–9 works well for interior photography prompts
+- 30 inference steps is a reasonable quality/speed balance; go up to 50 for a final render
 
+---
+
+## 11. Known issues
+
+- **Segmentation accuracy on unusual kitchens** — SegFormer-B0 is a small model trained on general indoor scenes, not kitchens specifically. Very dark kitchens, unusual angles, or heavy lens distortion can produce noisy masks. The larger SegFormer variants (B2, B5) would segment more accurately.
+- **Inpainting coherence at region boundaries** — the feathering pass reduces hard edges but can't fully hide them in high-contrast transitions. Increasing `strength` makes blending smoother but may drift further from the original geometry.
+- **CPU generation is very slow** — the SD inpainting pipeline is not optimised for CPU. Expect 10–20 minutes per image on a modern laptop without a GPU.
+- **Session files are never cleaned up** — `outputs/` grows indefinitely. There's no TTL or cleanup job yet. Delete the folder manually if disk space becomes a concern.
+- **`assests/` folder name is a typo** — it's `assests`, not `assets`, because the demo screenshot path in the README already references it that way. Will be corrected in a follow-up commit.
+
+---
+
+## 12. Roadmap
+
+- [ ] SegFormer-B2 or B5 as an optional higher-accuracy segmentation model
+- [ ] SDXL inpainting support for higher-resolution outputs
+- [ ] Per-region style mixing (e.g., marble counters + rustic floor in one pass)
+- [ ] Drag-to-compare slider for the before/after view
+- [ ] Session cleanup job (TTL-based purge for `outputs/`)
+- [ ] Docker Compose setup for one-command local deployment
+- [ ] Custom prompt input for power users who want to write their own style description
+
+---
+
+## 13. License
+
+MIT — see [LICENSE](LICENSE).
+
+---
+
+Built by [Yuvraj Sharma](https://github.com/yuvrajsharmaaa).  
+Issues and PRs welcome.
