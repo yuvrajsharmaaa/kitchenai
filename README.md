@@ -484,7 +484,6 @@ A few tuning notes:
 - **Inpainting coherence at region boundaries** — the feathering pass reduces hard edges but can't fully hide them in high-contrast transitions. Increasing `strength` makes blending smoother but may drift further from the original geometry.
 - **CPU generation is very slow** — the SD inpainting pipeline is not optimised for CPU. Expect 10–20 minutes per image on a modern laptop without a GPU.
 - **Session files are never cleaned up** — `outputs/` grows indefinitely. There's no TTL or cleanup job yet. Delete the folder manually if disk space becomes a concern.
-- **`assests/` folder name is a typo** — it's `assests`, not `assets`, because the demo screenshot path in the README already references it that way. Will be corrected in a follow-up commit.
 
 ---
 
